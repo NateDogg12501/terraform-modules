@@ -4,11 +4,9 @@ Deploys a Node app (via [Lambda Web Adapter](https://github.com/awslabs/aws-lamb
 behind a public Lambda Function URL, staying inside AWS's Always Free tier:
 Lambda's 1M free requests/month, no ALB, no API Gateway.
 
-Extracted from [CalculatorExample](https://github.com/) — see that repo's
-`terraform/` for the original, single-project version this was generalized
-from, and its `CLAUDE.md` for the live-verified gotchas baked into this
-module (the two required `aws_lambda_permission` statements for public
-Function URLs, the AWS provider v6+ requirement, etc).
+Gotchas worth knowing before you rely on it: public Function URLs need
+**two** separate `aws_lambda_permission` statements (not one — see the
+comments in `main.tf`), and this requires the AWS provider v6+.
 
 Deliberately does **not** manage a datastore or its IAM permissions — pair
 with `dynamodb-single-table` (or nothing, if your app is stateless) and

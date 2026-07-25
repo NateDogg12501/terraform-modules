@@ -1,6 +1,11 @@
 locals {
-  # Lambda Web Adapter's published Lambda-Layer ARN (zip-package deployments).
-  # Verify this is still current before applying:
+  # Default ARN for AWS Lambda Web Adapter's own published layer (zip-package
+  # deployments) — 753240598075 is the AWS Lambda Web Adapter project's
+  # publishing account, a fixed public constant, NOT your account or
+  # anything account-specific. Already overridable per-call via
+  # var.lambda_web_adapter_layer_arn if you ever need a different layer
+  # (e.g. your own copy published into your own account).
+  # Verify this default is still current before applying:
   # https://github.com/awslabs/aws-lambda-web-adapter/releases
   lambda_web_adapter_layer_arn = coalesce(
     var.lambda_web_adapter_layer_arn,

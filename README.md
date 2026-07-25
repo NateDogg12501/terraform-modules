@@ -14,19 +14,18 @@ versioning (via tags) without the extra repos to maintain.
 - [`modules/dynamodb-single-table`](modules/dynamodb-single-table) — a
   single DynamoDB table with arbitrary GSIs.
 
-Both were extracted and generalized from
-[CalculatorExample](https://github.com/)'s hand-written `terraform/` — see
-each module's README for a usage example, and its comments for the
-live-verified gotchas that got carried over (public Function URL needing
+See each module's README for a usage example, and its comments for
+gotchas worth knowing before you rely on it (public Function URL needing
 two separate `aws_lambda_permission` statements, the AWS provider v6+
 requirement, the `hash_key`-not-`key_schema` GSI workaround, SSM
 `SecureString` instead of Secrets Manager for cost reasons).
 
-**Not yet run through `terraform validate`/`plan`** in this environment (no
-Terraform CLI available here) — reviewed by hand against the original,
-live-verified CalculatorExample config it was generalized from, but treat
-it as unverified until a real `terraform init && validate` (or better, a
-real `apply`) passes against it.
+**`terraform init` + `terraform validate` pass** for both modules, and the
+whole chain has been exercised live: a project generated from
+`project-template` successfully pulled both modules from this repo's
+`v1.0.0` tag over `git::https://...`, resolved providers, and validated
+clean. Not yet run through a real `terraform apply` against an AWS
+account — that's the next real test before trusting this in production.
 
 ## Versioning
 

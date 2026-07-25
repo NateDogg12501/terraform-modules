@@ -9,7 +9,7 @@ module's callers add up across several projects in the same account).
 
 ```hcl
 module "table" {
-  source = "git::https://github.com/<you>/terraform-modules.git//modules/dynamodb-single-table?ref=v1.0.0"
+  source = "git::https://github.com/NateDogg12501/terraform-modules.git//modules/dynamodb-single-table?ref=v1.0.0"
 
   table_name = "my-app-items"
   hash_key   = "id"

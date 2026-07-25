@@ -36,7 +36,7 @@ every project using it:
 
 ```hcl
 module "app" {
-  source = "git::https://github.com/<you>/terraform-modules.git//modules/lambda-web-app?ref=v1.0.0"
+  source = "git::https://github.com/NateDogg12501/terraform-modules.git//modules/lambda-web-app?ref=v1.0.0"
   # ...
 }
 ```

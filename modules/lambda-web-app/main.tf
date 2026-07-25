@@ -1,0 +1,109 @@
+locals {
+  # Lambda Web Adapter's published Lambda-Layer ARN (zip-package deployments).
+  # Verify this is still current before applying:
+  # https://github.com/awslabs/aws-lambda-web-adapter/releases
+  lambda_web_adapter_layer_arn = coalesce(
+    var.lambda_web_adapter_layer_arn,
+    "arn:aws:lambda:${var.aws_region}:753240598075:layer:LambdaAdapterLayer${var.lambda_architecture == "arm64" ? "Arm64" : "X86"}:28",
+  )
+}
+
+data "archive_file" "lambda_zip" {
+  type        = "zip"
+  source_dir  = var.source_dir
+  output_path = "${var.source_dir}.zip"
+}
+
+# Read-only: these SecureString parameters (Standard tier — free, unlike
+# Secrets Manager) are the system of record and must already exist. Terraform
+# deliberately does not manage or write their value — only reading it here
+# means the secret's only durable home is SSM, never a local tfvars file or
+# Terraform state as the source of truth.
+data "aws_ssm_parameter" "secrets" {
+  for_each        = var.ssm_secret_env_vars
+  name            = each.value
+  with_decryption = true
+}
+
+resource "aws_iam_role" "lambda_exec" {
+  name = "${var.app_name}-lambda-exec"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect    = "Allow"
+      Action    = "sts:AssumeRole"
+      Principal = { Service = "lambda.amazonaws.com" }
+    }]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "lambda_basic_execution" {
+  role       = aws_iam_role.lambda_exec.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+}
+
+# Attach any resource-specific permissions (e.g. DynamoDB access) to
+# aws_iam_role.lambda_exec.name from the root config — this module only ever
+# grants the basic execution role, on purpose, so it stays agnostic of what
+# the app actually talks to.
+
+resource "aws_lambda_function" "app" {
+  function_name = var.app_name
+  role          = aws_iam_role.lambda_exec.arn
+
+  runtime       = var.runtime
+  handler       = "run.sh"
+  architectures = [var.lambda_architecture]
+  layers        = [local.lambda_web_adapter_layer_arn]
+
+  filename         = data.archive_file.lambda_zip.output_path
+  source_code_hash = data.archive_file.lambda_zip.output_base64sha256
+
+  memory_size = var.memory_size
+  timeout     = var.timeout
+
+  environment {
+    variables = merge(
+      var.environment_variables,
+      { for env_name, param in data.aws_ssm_parameter.secrets : env_name => param.value },
+      {
+        AWS_LAMBDA_EXEC_WRAPPER      = "/opt/bootstrap"
+        AWS_LWA_PORT                 = var.port
+        AWS_LWA_READINESS_CHECK_PATH = var.health_check_path
+        PORT                         = var.port
+        NODE_ENV                     = "production"
+        TRUST_PROXY                  = "true"
+        # Do not set AWS_REGION here — it's a Lambda-reserved env var.
+      }
+    )
+  }
+}
+
+resource "aws_lambda_function_url" "app" {
+  function_name      = aws_lambda_function.app.function_name
+  authorization_type = "NONE"
+}
+
+# authorization_type = "NONE" above only tells AWS not to require IAM SigV4
+# signing on requests — it does NOT by itself grant permission to invoke the
+# URL. Without these two resource-based policy statements, every request
+# gets a generic 403 Forbidden before it ever reaches the function. As of
+# October 2025, AWS requires BOTH statements below for public function URLs
+# (previously InvokeFunctionUrl alone was enough) — see
+# https://docs.aws.amazon.com/lambda/latest/dg/urls-auth.html
+resource "aws_lambda_permission" "function_url_public" {
+  statement_id           = "AllowPublicFunctionUrlInvoke"
+  action                 = "lambda:InvokeFunctionUrl"
+  function_name           = aws_lambda_function.app.function_name
+  principal               = "*"
+  function_url_auth_type  = "NONE"
+}
+
+resource "aws_lambda_permission" "function_invoke_via_url" {
+  statement_id             = "AllowPublicFunctionInvokeViaUrl"
+  action                   = "lambda:InvokeFunction"
+  function_name            = aws_lambda_function.app.function_name
+  principal                = "*"
+  invoked_via_function_url = true
+}

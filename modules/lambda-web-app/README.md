@@ -8,6 +8,18 @@ Gotchas worth knowing before you rely on it: public Function URLs need
 **two** separate `aws_lambda_permission` statements (not one — see the
 comments in `main.tf`), and this requires the AWS provider v6+.
 
+`source_dir` must contain a `run.sh` (with a shebang, e.g. `#!/bin/sh\nexec
+node server.js`) — the Lambda Web Adapter's zip-package handler execs it
+directly. The module zips `source_dir` itself via `scripts/zip_lambda.py`
+(needs `python3` on PATH at apply time) rather than the more common
+`archive_file` data source, because `archive_file` mirrors whatever
+executable bit it reads from the host filesystem — and on Windows there is
+no such bit for it to read, so a zip built by `terraform apply` on Windows
+silently drops `run.sh`'s +x, and the Lambda then fails to start. Confirmed
+by an actual `archive_file` zip built on Windows: exec bit lost 100% of the
+time. This module's zip script sets the mode explicitly instead, so it's
+correct regardless of host OS.
+
 Deliberately does **not** manage a datastore or its IAM permissions — pair
 with `dynamodb-single-table` (or nothing, if your app is stateless) and
 attach any extra policies to `lambda_role_name` from your root config.

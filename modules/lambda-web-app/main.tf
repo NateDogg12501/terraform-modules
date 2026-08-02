@@ -13,10 +13,35 @@ locals {
   )
 }
 
-data "archive_file" "lambda_zip" {
-  type        = "zip"
-  source_dir  = var.source_dir
-  output_path = "${var.source_dir}.zip"
+locals {
+  # Hashed independently of the zip artifact itself (see zip_lambda below) so
+  # this is computable at plan time even before the zip exists on a fresh apply.
+  source_files = sort(fileset(var.source_dir, "**"))
+  source_hash = sha256(join("", [
+    for f in local.source_files : filesha256("${var.source_dir}/${f}")
+  ]))
+  output_zip = "${var.source_dir}.zip"
+}
+
+# Builds the deployment zip via a helper script instead of archive_file --
+# see scripts/zip_lambda.py for why: archive_file can't produce a zip with
+# run.sh's executable bit set when terraform apply runs on Windows.
+resource "terraform_data" "lambda_zip" {
+  triggers_replace = {
+    source_hash = local.source_hash
+  }
+
+  provisioner "local-exec" {
+    # Unquoted path.module is safe -- it's always a Terraform-generated
+    # .terraform/modules/... path with no spaces. var.source_dir and the
+    # output path go through env vars instead of argv (see scripts/zip_lambda.py
+    # for why), so they're safe even if they do contain spaces.
+    command = "python3 ${path.module}/scripts/zip_lambda.py"
+    environment = {
+      ZIP_SOURCE_DIR  = var.source_dir
+      ZIP_OUTPUT_PATH = local.output_zip
+    }
+  }
 }
 
 # Read-only: these SecureString parameters (Standard tier — free, unlike
@@ -62,8 +87,10 @@ resource "aws_lambda_function" "app" {
   architectures = [var.lambda_architecture]
   layers        = [local.lambda_web_adapter_layer_arn]
 
-  filename         = data.archive_file.lambda_zip.output_path
-  source_code_hash = data.archive_file.lambda_zip.output_base64sha256
+  filename         = local.output_zip
+  source_code_hash = base64sha256(local.source_hash)
+
+  depends_on = [terraform_data.lambda_zip]
 
   memory_size = var.memory_size
   timeout     = var.timeout

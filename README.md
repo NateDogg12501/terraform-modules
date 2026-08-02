@@ -24,8 +24,9 @@ requirement, the `hash_key`-not-`key_schema` GSI workaround, SSM
 whole chain has been exercised live: a project generated from
 `project-template` successfully pulled both modules from this repo's
 `v1.0.0` tag over `git::https://...`, resolved providers, and validated
-clean. Not yet run through a real `terraform apply` against an AWS
-account — that's the next real test before trusting this in production.
+clean. `lambda-web-app` has since been through a real `terraform apply`
+against an AWS account (from `n8nDemo`) and the deployed Function URL was
+verified serving traffic end to end.
 
 ## Versioning
 

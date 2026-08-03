@@ -44,6 +44,30 @@ module "app" {
 Bump the tag (and re-run `terraform init -upgrade` in consuming projects)
 when you're ready to pull in a change — not automatically.
 
+## Formatting (enable the hook once per clone)
+
+```bash
+git config core.hooksPath .githooks
+```
+
+`.githooks/pre-commit` refuses a commit whose staged `.tf`/`.tfvars` files
+aren't `terraform fmt`-clean. Git never enables a committed hook
+automatically, so a fresh clone needs that one command — until it's run,
+the hook is inert.
+
+Worth knowing *why* this repo needs a hook rather than relying on CI like
+its consumers do: a generated project runs `terraform fmt -check` against
+its own root config, which never descends into a module fetched from here.
+Nothing downstream will ever tell you this repo's source is unformatted.
+
+The hook checks staged content, not the working tree, and refuses rather
+than reformatting — see the comments in the hook itself for both trade-offs.
+To fix what it flags:
+
+```bash
+terraform fmt -recursive && git add -u
+```
+
 ## Adding a module
 
 1. New directory under `modules/`, following the existing shape:

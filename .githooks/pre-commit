@@ -1,0 +1,62 @@
+#!/bin/sh
+# Rejects a commit whose staged Terraform files aren't `terraform fmt`-clean.
+#
+# Enable it (once per clone — git does not do this for you):
+#     git config core.hooksPath .githooks
+#
+# Why this repo needs a hook at all: consumers pin modules here by tag and run
+# `terraform fmt -check` in their own CI on their *root* config only, which
+# never inspects a fetched module's source. So nothing downstream catches
+# unformatted module code, and this repo has no CI of its own. The hook is the
+# only gate.
+#
+# It checks the STAGED content (`git show :file`), not the working tree. Those
+# differ whenever a file is partially staged, and the staged bytes are what
+# actually lands in the commit — checking the working tree would both miss real
+# problems and flag ones you aren't committing.
+#
+# Deliberately checks rather than reformats-and-restages. Auto-fixing means
+# running `git add` on your behalf, which on a partially-staged file silently
+# sweeps the unstaged remainder into the commit too. A refusal you resolve with
+# one command is a better trade than a hook that can change what you committed.
+
+set -e
+
+if ! command -v terraform >/dev/null 2>&1; then
+    echo "pre-commit: terraform not on PATH — skipping fmt check." >&2
+    echo "            Install Terraform, or run 'terraform fmt -recursive' elsewhere before pushing." >&2
+    exit 0
+fi
+
+# ACMR: added/copied/modified/renamed. Deletions have no content to check.
+staged=$(git diff --cached --name-only --diff-filter=ACMR -z |
+    tr '\0' '\n' |
+    grep -E '\.(tf|tfvars)$' || true)
+
+[ -z "$staged" ] && exit 0
+
+unformatted=""
+for file in $staged; do
+    if ! git show ":$file" | terraform fmt -check - >/dev/null 2>&1; then
+        unformatted="$unformatted $file"
+    fi
+done
+
+if [ -n "$unformatted" ]; then
+    echo "pre-commit: these staged files are not terraform fmt-clean:" >&2
+    for file in $unformatted; do
+        echo "  $file" >&2
+    done
+    echo "" >&2
+    echo "Fix and re-stage:" >&2
+    echo "  terraform fmt -recursive && git add -u" >&2
+    echo "" >&2
+    echo "See exactly what would change:" >&2
+    echo "  terraform fmt -recursive -diff -check" >&2
+    echo "" >&2
+    echo "(A non-zero exit can also mean a file failed to parse — run the diff" >&2
+    echo " command above to tell a syntax error apart from a formatting one.)" >&2
+    exit 1
+fi
+
+exit 0

@@ -52,12 +52,12 @@ variable "write_capacity" {
 variable "global_secondary_indexes" {
   description = "Optional GSIs. hash_key/range_key here must also appear in var.attributes."
   type = list(object({
-    name           = string
-    hash_key       = string
-    range_key      = optional(string)
+    name            = string
+    hash_key        = string
+    range_key       = optional(string)
     projection_type = optional(string, "ALL")
-    read_capacity  = optional(number, 5)
-    write_capacity = optional(number, 5)
+    read_capacity   = optional(number, 5)
+    write_capacity  = optional(number, 5)
   }))
   default = []
 }

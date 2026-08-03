@@ -20,6 +20,14 @@ by an actual `archive_file` zip built on Windows: exec bit lost 100% of the
 time. This module's zip script sets the mode explicitly instead, so it's
 correct regardless of host OS.
 
+Two resource preconditions reject an unbuilt `source_dir` at plan time. They
+exist because `fileset()` returns an *empty set* for a directory that doesn't
+exist rather than erroring — so without them, forgetting the build step
+produced a valid but empty zip and an apply that reported success while
+deploying a Lambda with no code in it. Swapping `archive_file` (which failed
+loudly with `could not archive missing directory`) for the zip script quietly
+removed that safety net; the preconditions put it back.
+
 Deliberately does **not** manage a datastore or its IAM permissions — pair
 with `dynamodb-single-table` (or nothing, if your app is stateless) and
 attach any extra policies to `lambda_role_name` from your root config.
@@ -28,7 +36,7 @@ attach any extra policies to `lambda_role_name` from your root config.
 
 ```hcl
 module "app" {
-  source = "git::https://github.com/NateDogg12501/terraform-modules.git//modules/lambda-web-app?ref=v1.0.0"
+  source = "git::https://github.com/NateDogg12501/terraform-modules.git//modules/lambda-web-app?ref=v1.2.0"
 
   app_name   = "my-app"
   aws_region = var.aws_region

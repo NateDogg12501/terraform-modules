@@ -42,6 +42,25 @@ resource "terraform_data" "lambda_zip" {
       ZIP_OUTPUT_PATH = local.output_zip
     }
   }
+
+  # These guard a SILENT failure, not a loud one. fileset() returns an empty
+  # set for a directory that doesn't exist rather than erroring (verified
+  # against this Terraform version), so without these an unbuilt source_dir
+  # sails through plan, hands os.walk a missing path, and ships a perfectly
+  # valid EMPTY zip to Lambda -- apply reports success and the function is
+  # broken only at runtime. The pre-v1.1.0 archive_file implementation failed
+  # loudly here ("could not archive missing directory"); restore that.
+  lifecycle {
+    precondition {
+      condition     = length(local.source_files) > 0
+      error_message = "source_dir (${var.source_dir}) is empty or does not exist. Run your project's Lambda build step (e.g. `npm run build:lambda`) before `terraform apply` -- this module zips the artifact, it does not build it."
+    }
+
+    precondition {
+      condition     = contains(local.source_files, "run.sh")
+      error_message = "source_dir (${var.source_dir}) contains no run.sh at its root. The Lambda Web Adapter's zip-package handler execs run.sh directly, so the artifact must include one (e.g. `#!/bin/sh` then `exec node src/index.js`)."
+    }
+  }
 }
 
 # Read-only: these SecureString parameters (Standard tier — free, unlike

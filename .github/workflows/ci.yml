@@ -1,0 +1,55 @@
+name: CI
+
+# The real backstop for this repo's formatting and validity.
+#
+# .githooks/pre-commit checks the same fmt rule, but it is local-only: it needs
+# `git config core.hooksPath .githooks` per clone, and `git commit --no-verify`
+# walks straight past it. Nothing downstream covers the gap either — consumers
+# run `terraform fmt -check` against their own root config, which never
+# descends into a module fetched from here by tag.
+#
+# So this workflow is the only check that always runs on the source itself.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  fmt:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+      # Repo-root and recursive on purpose, rather than per-module: this way a
+      # .tf file that lands outside modules/ is still covered, and it matches
+      # what the pre-commit hook checks (every staged .tf, wherever it lives).
+      - run: terraform fmt -check -recursive
+
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+      # Discovered at runtime rather than listed in a matrix. A hardcoded list
+      # is a checklist item that gets forgotten — "add a module" is a
+      # documented workflow in the README, and a new module silently going
+      # unvalidated is exactly the failure this job exists to prevent.
+      - name: init + validate every module
+        run: |
+          set -euo pipefail
+          failed=""
+          for dir in modules/*/; do
+            module=$(basename "$dir")
+            echo "::group::$module"
+            if (cd "$dir" && terraform init -backend=false && terraform validate); then
+              echo "$module OK"
+            else
+              failed="$failed $module"
+            fi
+            echo "::endgroup::"
+          done
+          if [ -n "$failed" ]; then
+            echo "::error::failed to validate:$failed"
+            exit 1
+          fi

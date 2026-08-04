@@ -65,6 +65,28 @@ variable "health_check_path" {
   default     = "/api/health"
 }
 
+variable "retention_in_days" {
+  description = <<-EOT
+    Retention for this function's CloudWatch log group. Defaults to 14 days,
+    not "forever": CloudWatch Logs' free tier is 5GB of ingestion/storage per
+    month, and unbounded retention turns that into a bill that only ever grows.
+    Set 0 for Never Expire if you genuinely need it — that is a cost decision,
+    so log it in your project's docs/decisions.md.
+  EOT
+  type        = number
+  default     = 14
+
+  validation {
+    # CloudWatch accepts only this fixed set — an arbitrary number (say 10)
+    # is rejected by the API at apply time, well after the plan looked fine.
+    condition = contains(
+      [0, 1, 3, 5, 7, 14, 30, 60, 90, 120, 150, 180, 365, 400, 545, 731, 1096, 1827, 2192, 2557, 2922, 3288, 3653],
+      var.retention_in_days
+    )
+    error_message = "retention_in_days must be one of CloudWatch's accepted values: 0 (never expire), 1, 3, 5, 7, 14, 30, 60, 90, 120, 150, 180, 365, 400, 545, 731, 1096, 1827, 2192, 2557, 2922, 3288, 3653."
+  }
+}
+
 variable "environment_variables" {
   description = "Plain (non-secret) environment variables to set on the function"
   type        = map(string)

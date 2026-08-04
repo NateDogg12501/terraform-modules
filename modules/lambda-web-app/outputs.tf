@@ -19,3 +19,8 @@ output "lambda_role_name" {
 output "lambda_role_arn" {
   value = aws_iam_role.lambda_exec.arn
 }
+
+output "log_group_name" {
+  description = "CloudWatch log group this function writes to — also the import ID if you are adopting a pre-existing auto-created group (see CHANGELOG.md)"
+  value       = aws_cloudwatch_log_group.lambda.name
+}

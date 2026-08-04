@@ -49,6 +49,19 @@ variable "write_capacity" {
   default     = 5
 }
 
+variable "cost_acknowledged" {
+  description = <<-EOT
+    Set true to confirm you accept a billable configuration. The standard is
+    AWS Always Free unless logged in docs/decisions.md and explicitly
+    confirmed — this flag is the "explicitly confirmed" half, and the plan
+    fails without it whenever the settings below leave the free allowance.
+    Log the "why" in your project's docs/decisions.md; setting this to true
+    without that entry satisfies the mechanism but not the standard.
+  EOT
+  type        = bool
+  default     = false
+}
+
 variable "global_secondary_indexes" {
   description = "Optional GSIs. hash_key/range_key here must also appear in var.attributes."
   type = list(object({

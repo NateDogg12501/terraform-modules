@@ -4,11 +4,16 @@
 # Enable it (once per clone — git does not do this for you):
 #     git config core.hooksPath .githooks
 #
-# Why this repo needs a hook at all: consumers pin modules here by tag and run
-# `terraform fmt -check` in their own CI on their *root* config only, which
-# never inspects a fetched module's source. So nothing downstream catches
-# unformatted module code, and this repo has no CI of its own. The hook is the
-# only gate.
+# Why this repo checks formatting at all: consumers pin modules here by tag and
+# run `terraform fmt -check` in their own CI on their *root* config only, which
+# never inspects a fetched module's source. Nothing downstream catches
+# unformatted module code.
+#
+# This hook is not that gate — .github/workflows/ci.yml is, and it runs the same
+# check on every PR and push to main. The hook is the fast local copy, so you
+# find out now instead of after a red build. It deliberately can't be the real
+# gate: it does nothing until someone runs `git config core.hooksPath .githooks`
+# in their clone, and `git commit --no-verify` skips it even then.
 #
 # It checks the STAGED content (`git show :file`), not the working tree. Those
 # differ whenever a file is partially staged, and the staged bytes are what

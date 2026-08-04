@@ -97,6 +97,30 @@ resource "aws_iam_role_policy_attachment" "lambda_basic_execution" {
 # grants the basic execution role, on purpose, so it stays agnostic of what
 # the app actually talks to.
 
+# Declared explicitly rather than left to Lambda. If this resource doesn't
+# exist, Lambda creates /aws/lambda/<name> itself on first invocation, with
+# two consequences that both cut against a repo whose premise is $0:
+#
+#   1. An auto-created group's retention is "Never Expire". Log storage then
+#      accrues forever, and CloudWatch Logs' free tier (5GB) is not a cap —
+#      it's the point where billing starts.
+#   2. An auto-created group isn't in Terraform state, so `terraform destroy`
+#      leaves it behind. It survives every teardown, indefinitely.
+#
+# BREAKING for any environment deployed before this resource existed: the
+# auto-created group already exists, and the next apply fails with
+# ResourceAlreadyExistsException. Import it once, then apply:
+#
+#     terraform import 'module.<name>.aws_cloudwatch_log_group.lambda' '/aws/lambda/<app_name>'
+#
+# See this repo's CHANGELOG.md for the full note.
+resource "aws_cloudwatch_log_group" "lambda" {
+  # Lambda writes to this exact name — it is derived from the function name,
+  # not configurable on the function side.
+  name              = "/aws/lambda/${var.app_name}"
+  retention_in_days = var.retention_in_days
+}
+
 resource "aws_lambda_function" "app" {
   function_name = var.app_name
   role          = aws_iam_role.lambda_exec.arn
@@ -109,7 +133,14 @@ resource "aws_lambda_function" "app" {
   filename         = local.output_zip
   source_code_hash = base64sha256(local.source_hash)
 
-  depends_on = [terraform_data.lambda_zip]
+  # The log group dependency is about ordering in both directions. On create it
+  # guarantees the group (with its retention) exists before the function can be
+  # invoked and auto-create an un-managed one. On destroy Terraform reverses the
+  # edge, tearing the function down first — without it, deleting the log group
+  # while a live function still holds logs:CreateLogGroup (which
+  # AWSLambdaBasicExecutionRole grants) just invites the next invocation to
+  # recreate it, un-managed and back to Never Expire.
+  depends_on = [terraform_data.lambda_zip, aws_cloudwatch_log_group.lambda]
 
   memory_size = var.memory_size
   timeout     = var.timeout

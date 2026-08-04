@@ -32,11 +32,33 @@ Deliberately does **not** manage a datastore or its IAM permissions — pair
 with `dynamodb-single-table` (or nothing, if your app is stateless) and
 attach any extra policies to `lambda_role_name` from your root config.
 
+## Logs
+
+The module declares the `/aws/lambda/<app_name>` log group itself, with
+`retention_in_days` (default 14, `0` for never expire). Left to Lambda, that
+group gets auto-created with retention **Never Expire** and — because it isn't
+in Terraform state — survives `terraform destroy` and keeps accruing storage
+against CloudWatch Logs' 5GB free tier forever.
+
+**Upgrading a deployment that already exists on v1.x:** the auto-created group
+is already there, so the first apply fails with
+`ResourceAlreadyExistsException`. Import it once, then apply:
+
+```bash
+terraform import 'module.app.aws_cloudwatch_log_group.lambda' '/aws/lambda/my-app'
+```
+
+Substitute your own module block name for `app` and your `app_name` for
+`my-app`. A deployment that has never been applied needs nothing. See
+[`CHANGELOG.md`](../../CHANGELOG.md) for the full note — including that the
+post-import plan will show retention changing away from Never Expire, which
+ages out logs older than whatever you set.
+
 ## Usage
 
 ```hcl
 module "app" {
-  source = "git::https://github.com/NateDogg12501/terraform-modules.git//modules/lambda-web-app?ref=v1.2.0"
+  source = "git::https://github.com/NateDogg12501/terraform-modules.git//modules/lambda-web-app?ref=v2.0.0"
 
   app_name   = "my-app"
   aws_region = var.aws_region

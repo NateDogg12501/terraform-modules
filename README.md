@@ -13,21 +13,27 @@ versioning (via tags) without the extra repos to maintain.
   behind a public Function URL, via Lambda Web Adapter.
 - [`modules/dynamodb-single-table`](modules/dynamodb-single-table) — a
   single DynamoDB table with arbitrary GSIs.
+- [`modules/s3-bucket`](modules/s3-bucket) — a general-purpose S3 bucket,
+  encrypted and locked down by default. Motivating use case: backing a
+  project's own Terraform state.
 
 See each module's README for a usage example, and its comments for
 gotchas worth knowing before you rely on it (public Function URL needing
 two separate `aws_lambda_permission` statements, the AWS provider v6+
 requirement, the `hash_key`-not-`key_schema` GSI workaround, SSM
-`SecureString` instead of Secrets Manager for cost reasons).
+`SecureString` instead of Secrets Manager for cost reasons, S3's Always Free
+limits being usage-based rather than configuration-based).
 
-**`terraform init` + `terraform validate` pass** for both modules — checked
+**`terraform init` + `terraform validate` pass** for every module — checked
 on every push by [CI](#ci) rather than asserted here — and the
 whole chain has been exercised live: a project generated from
-`project-template` successfully pulled both modules from this repo's
-`v1.0.0` tag over `git::https://...`, resolved providers, and validated
-clean. `lambda-web-app` has since been through a real `terraform apply`
-against an AWS account (from `n8nDemo`) and the deployed Function URL was
-verified serving traffic end to end.
+`project-template` successfully pulled `lambda-web-app` and
+`dynamodb-single-table` from this repo's `v1.0.0` tag over
+`git::https://...`, resolved providers, and validated clean. `lambda-web-app`
+has since been through a real `terraform apply` against an AWS account (from
+`n8nDemo`) and the deployed Function URL was verified serving traffic end to
+end. `s3-bucket` has not yet been through a live `terraform apply` — CI
+covers `init`/`validate` only.
 
 ## Versioning
 
@@ -37,7 +43,7 @@ every project using it:
 
 ```hcl
 module "app" {
-  source = "git::https://github.com/NateDogg12501/terraform-modules.git//modules/lambda-web-app?ref=v2.0.0"
+  source = "git::https://github.com/NateDogg12501/terraform-modules.git//modules/lambda-web-app?ref=v2.1.0"
   # ...
 }
 ```
@@ -52,18 +58,21 @@ tag alone* — v2.0.0, for instance, needs a `terraform import` first.
 
 ### Release checklist
 
-1. **Update every advertised version string.** They are maintained by hand, in
-   three places, and a stale one is not cosmetic — it is the documented cause
-   of a real bug persisting downstream (see `v1.1.0` in the changelog: the fix
-   shipped, the READMEs kept advertising `v1.0.0`, and the projects copying
-   those examples kept pinning the broken version). Find them all:
+1. **Update every advertised version string.** They are maintained by hand,
+   and a stale one is not cosmetic — it is the documented cause of a real
+   bug persisting downstream (see `v1.1.0` in the changelog: the fix shipped,
+   the READMEs kept advertising `v1.0.0`, and the projects copying those
+   examples kept pinning the broken version). Find them all:
 
    ```bash
    grep -rn "ref=v" --include="*.md" .
    ```
 
    Today that is this file's example above, `modules/lambda-web-app/README.md`,
-   and `modules/dynamodb-single-table/README.md`.
+   `modules/dynamodb-single-table/README.md`, and `modules/s3-bucket/README.md`
+   (two examples in that last one — the bucket and its optional DynamoDB lock
+   table). `CHANGELOG.md` also matches the grep but is a historical record,
+   not an advertised version — leave its old `?ref=` values as they are.
 
 2. **Add the `CHANGELOG.md` entry**, including any manual migration step a
    consumer has to run. If an existing deployment can't take the new version

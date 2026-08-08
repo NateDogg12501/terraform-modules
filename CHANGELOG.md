@@ -9,6 +9,36 @@ the note under that version).
 Versions follow semver *from the consumer's point of view*: MAJOR means an
 existing deployment cannot move onto this version by bumping the tag alone.
 
+## v2.1.0 — 2026-08-08
+
+### Added
+
+- `s3-bucket`: a new general-purpose S3 bucket module. Motivating use case:
+  backing a project's own Terraform state, but nothing in it is
+  state-specific.
+
+  AWS's S3 Free Tier stopped expiring after 12 months in mid-2024 — it's now
+  perpetual for new and existing accounts (5GB S3 Standard storage, 20,000
+  GET, 2,000 PUT/COPY/POST/LIST per month), which is what makes an S3 module
+  fit this repo's Always Free standard at all.
+
+  Defaults: SSE-S3 encryption (`AES256`, no KMS cost), `BucketOwnerEnforced`
+  ownership (ACLs off entirely), public access fully blocked, a bucket policy
+  denying any request over plain HTTP, and a lifecycle rule expiring
+  noncurrent object versions after 90 days so a bucket that's overwritten a
+  lot (e.g. state, applied on every run) doesn't quietly outgrow the 5GB
+  allowance.
+
+  Same `cost_acknowledged` + `lifecycle` precondition pattern as
+  `dynamodb-single-table`, gating `sse_algorithm = "aws:kms"` — but see the
+  module's README for what that gate *can't* catch: S3's Always Free limits
+  are usage-based (GB stored, requests made), not configuration-based, so no
+  plan-time precondition can see them the way the DynamoDB capacity gate can.
+
+  README documents both the native-locking backend config (`use_lockfile`,
+  Terraform >= 1.10) and the `dynamodb-single-table`-backed alternative for
+  older Terraform.
+
 ## v2.0.0 — 2026-08-03
 
 ### Breaking: `lambda-web-app` now manages the CloudWatch log group

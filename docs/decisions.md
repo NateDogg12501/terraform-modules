@@ -36,8 +36,12 @@ inert. If AWS ever did consult the list again, a stale pinned value is the
 failure mode — an authentication outage across every repository in the account
 — whereas an unset list means AWS uses its own trust store.
 
-**Reversal.** Set `thumbprint_list` on the module. No state migration; it is an
-in-place update to the provider.
+**Reversal is one-way-ish.** Setting `thumbprint_list` is an in-place update
+with no state migration, but it does not undo cleanly: the argument is
+Optional+Computed, so removing it later leaves the last value you set in place
+rather than returning the decision to AWS. Getting back to "AWS decides" means
+setting the value explicitly or replacing the provider — which, since every
+role in the account trusts it, is not a casual operation.
 
 ## 2026-08-09 — `github-oidc-deploy-role` requires `permissions_boundary_arn`
 

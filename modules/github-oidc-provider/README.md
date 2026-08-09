@@ -92,7 +92,23 @@ is documented in `main.tf` and in this repo's `docs/decisions.md` rather than
 left to look like an oversight.
 
 The variable remains as an escape hatch if AWS ever reverses that. Setting it
-is not something a normal deployment should do.
+is not something a normal deployment should do — and note it doesn't undo
+cleanly: the argument is Optional+Computed, so removing it later keeps the last
+value you set rather than handing the decision back to AWS.
+
+## Outputs
+
+| Output | Contains |
+|---|---|
+| `provider_arn` | The provider ARN. This is what `github-oidc-deploy-role` takes as `oidc_provider_arn`. |
+| `provider_url` | The issuer URL **with** its scheme: `https://token.actions.githubusercontent.com`. |
+
+`provider_url` is the `iss` claim, not a condition-key prefix. A role's trust
+policy keys use the bare host — `token.actions.githubusercontent.com:aud` and
+`:sub` — so interpolating this output into a key name produces
+`https://token.actions.githubusercontent.com:aud`, which matches nothing and
+fails open-looking rather than erroring. `github-oidc-deploy-role` hardcodes
+the host for exactly this reason.
 
 ## Cost
 

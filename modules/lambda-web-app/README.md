@@ -58,7 +58,7 @@ ages out logs older than whatever you set.
 
 ```hcl
 module "app" {
-  source = "git::https://github.com/NateDogg12501/terraform-modules.git//modules/lambda-web-app?ref=v2.1.0"
+  source = "git::https://github.com/NateDogg12501/terraform-modules.git//modules/lambda-web-app?ref=v2.2.0"
 
   app_name   = "my-app"
   aws_region = var.aws_region

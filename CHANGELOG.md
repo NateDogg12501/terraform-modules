@@ -9,6 +9,71 @@ the note under that version).
 Versions follow semver *from the consumer's point of view*: MAJOR means an
 existing deployment cannot move onto this version by bumping the tag alone.
 
+## v2.2.0 — 2026-08-09
+
+Nothing here changes an existing module, so a consumer on v2.1.0 can bump
+`?ref=` with no migration step. Both new modules are additive, and both are
+free (IAM only — no `cost_acknowledged` flag, deliberately; each README says
+so).
+
+### Added
+
+- `github-oidc-provider`: the account-level `aws_iam_openid_connect_provider`
+  for `token.actions.githubusercontent.com`, so GitHub Actions can deploy with
+  short-lived STS credentials instead of long-lived AWS access keys.
+
+  `thumbprint_list` is deliberately **unset**. AWS validates that endpoint
+  against its own trusted root CA store and no longer uses the thumbprint, so
+  pinning one of the constants still floating around the internet
+  (`6938fd4d...`) buys nothing and breaks the day GitHub rotates a
+  certificate. Reasoning is in `main.tf` and `docs/decisions.md` so the
+  omission can't be mistaken for an oversight.
+
+  **One per AWS account.** IAM permits a single provider per issuer URL, so a
+  second apply in the same account fails with `EntityAlreadyExists`. The README
+  covers adopting an existing one with `terraform import`, and the
+  `data "aws_iam_openid_connect_provider"` alternative when another config
+  should keep owning it.
+
+- `github-oidc-deploy-role`: a deploy role for one repo and one environment,
+  assumable only by a GitHub Actions run whose OIDC token matches the
+  `subject_claims` it was created with.
+
+  The trust policy pins `...:aud` to `sts.amazonaws.com` with `StringEquals`
+  and matches `...:sub` against `subject_claims` with `StringLike`. Passing
+  `["repo:<owner>/<name>:ref:refs/heads/main"]` is what makes "only `main`
+  deploys to production" a rule **AWS** enforces, rather than one a workflow
+  file promises — and a workflow file is editable in any pull request.
+
+  Two guards, both failing the plan: every `subject_claims` entry must start
+  with `repo:<github_repo>:`, and `github_repo` itself must contain no
+  wildcard. Without the pair, a stray `repo:*` produces a role assumable by
+  every repository on GitHub that looks entirely ordinary in the console. Note
+  these are variable validations, which `terraform validate` does not evaluate
+  for a child module — they fire at plan, which always precedes apply.
+
+  `permissions_boundary_arn` is **required, with no default**, because these
+  roles get created by an automated provisioner and an optional security
+  argument is one that eventually gets left out silently. The module consumes
+  the boundary; it does not create it (account-scoped, belongs in the account
+  bootstrap config).
+
+  Requires **Terraform >= 1.9**, unlike the rest of this repo's `>= 1.5`: 1.9
+  is the first version whose variable validation can reference another
+  variable, which the `subject_claims`-against-`github_repo` check needs.
+  Generated projects already require >= 1.10 for the S3 backend's native
+  locking.
+
+- `docs/decisions.md` in this repo, recording the thumbprint decision, the
+  required-boundary decision, and the validation/version-constraint decision.
+  `project-template`'s `STANDARDS.md` asks every generated project to keep one;
+  this repo now holds itself to the same rule.
+
+- `README.md`: an **application vs prerequisite modules** section. The OIDC
+  modules are the first of a new category — things that must exist before CI
+  can deploy at all, that outlive every project in the account, and that a
+  project's `terraform destroy` must not take with it.
+
 ## v2.1.0 — 2026-08-08
 
 ### Added

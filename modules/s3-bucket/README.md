@@ -21,7 +21,7 @@ own `terraform.tfstate` instead of a local file:
 
 ```hcl
 module "tf_state" {
-  source = "git::https://github.com/NateDogg12501/terraform-modules.git//modules/s3-bucket?ref=v2.1.0"
+  source = "git::https://github.com/NateDogg12501/terraform-modules.git//modules/s3-bucket?ref=v2.2.0"
 
   bucket_name = "my-app-tfstate"
 }
@@ -54,7 +54,7 @@ On Terraform < 1.10 (no `use_lockfile`), pair this module with
 
 ```hcl
 module "tf_lock" {
-  source = "git::https://github.com/NateDogg12501/terraform-modules.git//modules/dynamodb-single-table?ref=v2.1.0"
+  source = "git::https://github.com/NateDogg12501/terraform-modules.git//modules/dynamodb-single-table?ref=v2.2.0"
 
   table_name = "my-app-tfstate-lock"
   hash_key   = "LockID"

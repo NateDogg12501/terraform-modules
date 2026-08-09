@@ -9,6 +9,11 @@ versioning (via tags) without the extra repos to maintain.
 
 ## Modules
 
+Two kinds, and the difference is worth keeping straight — see
+[Application vs prerequisite modules](#application-vs-prerequisite-modules).
+
+**Application modules** — the things a project is made of:
+
 - [`modules/lambda-web-app`](modules/lambda-web-app) — Node app on Lambda
   behind a public Function URL, via Lambda Web Adapter.
 - [`modules/dynamodb-single-table`](modules/dynamodb-single-table) — a
@@ -17,12 +22,22 @@ versioning (via tags) without the extra repos to maintain.
   encrypted and locked down by default. Motivating use case: backing a
   project's own Terraform state.
 
+**Prerequisite modules** — what has to exist before CI can deploy at all:
+
+- [`modules/github-oidc-provider`](modules/github-oidc-provider) — the
+  account-level trust anchor for GitHub Actions. One per AWS account.
+- [`modules/github-oidc-deploy-role`](modules/github-oidc-deploy-role) — a
+  deploy role for one repo and one environment, assumable over OIDC. Its
+  trust policy is what makes "only `main` deploys to production" a rule AWS
+  enforces rather than one a workflow file promises.
+
 See each module's README for a usage example, and its comments for
 gotchas worth knowing before you rely on it (public Function URL needing
 two separate `aws_lambda_permission` statements, the AWS provider v6+
 requirement, the `hash_key`-not-`key_schema` GSI workaround, SSM
 `SecureString` instead of Secrets Manager for cost reasons, S3's Always Free
-limits being usage-based rather than configuration-based).
+limits being usage-based rather than configuration-based, the OIDC provider
+being one-per-account and failing with `EntityAlreadyExists` on a second).
 
 **`terraform init` + `terraform validate` pass** for every module — checked
 on every push by [CI](#ci) rather than asserted here — and the
@@ -32,8 +47,29 @@ whole chain has been exercised live: a project generated from
 `git::https://...`, resolved providers, and validated clean. `lambda-web-app`
 has since been through a real `terraform apply` against an AWS account (from
 `n8nDemo`) and the deployed Function URL was verified serving traffic end to
-end. `s3-bucket` has not yet been through a live `terraform apply` — CI
-covers `init`/`validate` only.
+end. `s3-bucket`, `github-oidc-provider` and `github-oidc-deploy-role` have not
+yet been through a live `terraform apply` — CI covers `init`/`validate` only.
+
+### Application vs prerequisite modules
+
+The two OIDC modules are a different category from the other three, and naming
+the difference is what keeps this repo from drifting into a junk drawer:
+
+|  | Application | Prerequisite |
+|---|---|---|
+| What it is | Something a project is *made of* | Something that must exist *before* the project can be built or deployed |
+| Consumed by | A project's `terraform/` root config | An account-level bootstrap config, usually applied once by hand |
+| Lifecycle | Created and destroyed with the project | Outlives every project in the account |
+| How many | One per project that needs it | `github-oidc-provider`: one per AWS account. `github-oidc-deploy-role`: one per repo per environment |
+| Today | `lambda-web-app`, `dynamodb-single-table`, `s3-bucket` | `github-oidc-provider`, `github-oidc-deploy-role` |
+
+The practical consequence: `terraform destroy` on a project must not take a
+prerequisite with it. That is why the provider module documents adopting an
+existing provider by `terraform import` rather than creating a second one, and
+why neither OIDC module is wired into an application module.
+
+Everything else in this README — module shape, pinning, the release checklist,
+CI — applies identically to both.
 
 ## Versioning
 
@@ -43,7 +79,7 @@ every project using it:
 
 ```hcl
 module "app" {
-  source = "git::https://github.com/NateDogg12501/terraform-modules.git//modules/lambda-web-app?ref=v2.1.0"
+  source = "git::https://github.com/NateDogg12501/terraform-modules.git//modules/lambda-web-app?ref=v2.2.0"
   # ...
 }
 ```
@@ -69,10 +105,13 @@ tag alone* — v2.0.0, for instance, needs a `terraform import` first.
    ```
 
    Today that is this file's example above, `modules/lambda-web-app/README.md`,
-   `modules/dynamodb-single-table/README.md`, and `modules/s3-bucket/README.md`
-   (two examples in that last one — the bucket and its optional DynamoDB lock
-   table). `CHANGELOG.md` also matches the grep but is a historical record,
-   not an advertised version — leave its old `?ref=` values as they are.
+   `modules/dynamodb-single-table/README.md`, `modules/s3-bucket/README.md`
+   (two examples in that one — the bucket and its optional DynamoDB lock
+   table), `modules/github-oidc-provider/README.md`, and
+   `modules/github-oidc-deploy-role/README.md` (two examples in that one — the
+   production and staging roles). `CHANGELOG.md` also matches the grep but is a
+   historical record, not an advertised version — leave its old `?ref=` values
+   as they are.
 
 2. **Add the `CHANGELOG.md` entry**, including any manual migration step a
    consumer has to run. If an existing deployment can't take the new version
@@ -132,13 +171,18 @@ terraform fmt -recursive && git add -u
    root config's job), `variables.tf`, `main.tf`, `outputs.tf`, `README.md`
    with a usage example.
 2. Keep modules single-purpose and composable — `lambda-web-app` doesn't
-   know about DynamoDB, `dynamodb-single-table` doesn't know about Lambda;
-   a root config wires them together and attaches whatever IAM permissions
-   the pairing actually needs.
+   know about DynamoDB, `dynamodb-single-table` doesn't know about Lambda,
+   `github-oidc-provider` doesn't know about roles; a root config wires them
+   together and attaches whatever IAM permissions the pairing actually needs.
 3. If it provisions anything outside AWS Always Free, give it a
    `cost_acknowledged` bool and a `lifecycle` precondition that fails the plan
    when the configuration is billable and the flag is false — see
    `dynamodb-single-table` for the pattern, and `project-template`'s
-   `STANDARDS.md` for the rule it implements.
-4. Tag a new version once it's used successfully by at least one real
+   `STANDARDS.md` for the rule it implements. If it *can't* provision anything
+   billable, say so in its README — an absent gate should read as a decision,
+   not an omission. The OIDC modules do this: IAM is free.
+4. Log anything hard to reverse in [`docs/decisions.md`](docs/decisions.md) —
+   what was chosen, why, and why not the obvious alternative. A module README
+   says what a module is; that file says why it is that.
+5. Tag a new version once it's used successfully by at least one real
    project, following the release checklist above.

@@ -4,6 +4,13 @@ output "provider_arn" {
 }
 
 output "provider_url" {
-  description = "Issuer URL this provider trusts, without the https:// scheme — the prefix used in a role's trust-policy condition keys (token.actions.githubusercontent.com:aud / :sub)."
+  description = <<-EOT
+    Issuer URL this provider trusts, WITH the scheme
+    (https://token.actions.githubusercontent.com) — it is the `iss` claim, not
+    a condition-key prefix. Trust-policy condition keys use the bare host:
+    token.actions.githubusercontent.com:aud / :sub. Don't build one by
+    interpolating this output, or you get an https:// in the key name and a
+    condition that silently matches nothing.
+  EOT
   value       = aws_iam_openid_connect_provider.github.url
 }

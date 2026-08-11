@@ -25,49 +25,94 @@ variable "github_repo" {
     canonical casing in the token's `sub` claim, and IAM condition matching is
     case-sensitive.
 
-    Wildcards are rejected. Not a stylistic rule — subject_claims is validated
-    by prefix against this value, so a wildcard here would defeat that check
-    and hand the role to every repository on GitHub.
+    Wildcards are rejected — a wildcard here would widen the subject prefix
+    this module builds, which is the one thing standing between this role and
+    every repository on GitHub.
+
+    Names alone no longer identify a repository in the `sub` claim; see
+    github_owner_id and github_repo_id.
   EOT
   type        = string
 
   validation {
     condition     = can(regex("^[A-Za-z0-9][A-Za-z0-9-]{0,38}/[A-Za-z0-9._-]{1,100}$", var.github_repo))
-    error_message = "github_repo must be \"owner/name\" using only characters GitHub allows in each. In particular it must not contain * or ? — a wildcard here would defeat the subject_claims check."
+    error_message = "github_repo must be \"owner/name\" using only characters GitHub allows in each. In particular it must not contain * or ? — a wildcard here would widen the subject prefix and hand the role to other repositories."
   }
 }
 
-variable "subject_claims" {
+variable "github_owner_id" {
   description = <<-EOT
-    The `sub` claim patterns this role accepts, matched with StringLike (so *
-    and ? are wildcards, and a pattern without either behaves as an exact
-    match). This is the security boundary — see this module's README.
+    Numeric ID of the repository owner, which GitHub embeds in the `sub`
+    claim. Find it with:
 
-    Typical values:
-      production: ["repo:owner/name:ref:refs/heads/main"]
-      staging:    ["repo:owner/name:*"]
+      gh api users/<owner> --jq .id        # or orgs/<owner> for an org
 
-    Every entry must be scoped to github_repo; see the validation below.
+    This is not cosmetic. GitHub's subject claim is
+    "repo:<owner>@<owner_id>/<name>@<repo_id>:...", so a trust policy built
+    without the IDs matches no token that GitHub will ever mint, and the
+    failure surfaces only as "Not authorized to perform
+    sts:AssumeRoleWithWebIdentity".
+  EOT
+  type        = number
+
+  validation {
+    condition     = var.github_owner_id > 0 && floor(var.github_owner_id) == var.github_owner_id
+    error_message = "github_owner_id must be a positive integer — the numeric id from `gh api users/<owner> --jq .id`."
+  }
+}
+
+variable "github_repo_id" {
+  description = <<-EOT
+    Numeric ID of the repository itself, which GitHub embeds in the `sub`
+    claim. Find it with:
+
+      gh api repos/<owner>/<name> --jq .id
+
+    Using the ID rather than the name is what makes the trust survive a
+    rename and refuse an impersonation: a repository deleted and recreated
+    under the same name gets a new ID, so it cannot inherit this role.
+  EOT
+  type        = number
+
+  validation {
+    condition     = var.github_repo_id > 0 && floor(var.github_repo_id) == var.github_repo_id
+    error_message = "github_repo_id must be a positive integer — the numeric id from `gh api repos/<owner>/<name> --jq .id`."
+  }
+}
+
+variable "subject_suffixes" {
+  description = <<-EOT
+    The trailing part of the `sub` claim patterns this role accepts. The
+    module prepends the repository-anchored prefix, so these are ONLY the part
+    after it:
+
+      production: ["ref:refs/heads/main"]
+      staging:    ["*"]
+      a tag:      ["ref:refs/tags/v1.2.3"]
+      an env:     ["environment:prod"]
+
+    Matched with StringLike, so * and ? are wildcards and a pattern with
+    neither behaves as an exact match.
+
+    Do not pass a whole "repo:..." claim here — the prefix is built for you,
+    and the validation below rejects it rather than silently producing
+    "repo:owner@1/name@2:repo:owner/name:ref:...", which matches nothing.
   EOT
   type        = list(string)
 
   validation {
-    condition     = length(var.subject_claims) > 0
-    error_message = "subject_claims must contain at least one pattern. An empty list produces a StringLike condition with no values, which no token can satisfy."
+    condition     = length(var.subject_suffixes) > 0
+    error_message = "subject_suffixes must contain at least one pattern. An empty list produces a StringLike condition with no values, which no token can satisfy."
   }
 
-  # The guard the whole module exists for. A `sub` pattern that isn't anchored
-  # to this repository is assumable by whatever else it does match — at the
-  # extreme, "repo:*" is every repository on GitHub, public ones included, and
-  # the resulting role looks completely normal in the console.
-  #
-  # Requiring the trailing colon is what makes the prefix exact:
-  # "repo:owner/name-evil:*" does not start with "repo:owner/name:".
   validation {
-    condition = alltrue([
-      for claim in var.subject_claims : startswith(claim, "repo:${var.github_repo}:")
-    ])
-    error_message = "Every subject_claims entry must start with \"repo:${var.github_repo}:\" — a pattern not anchored to this repository would let other repositories assume this role."
+    condition     = alltrue([for suffix in var.subject_suffixes : length(trimspace(suffix)) > 0])
+    error_message = "subject_suffixes entries must not be empty or whitespace. An empty suffix yields a claim ending in \":\", which matches no token — say \"*\" if you mean any ref."
+  }
+
+  validation {
+    condition     = alltrue([for suffix in var.subject_suffixes : !startswith(suffix, "repo:")])
+    error_message = "subject_suffixes entries must not start with \"repo:\" — pass only the part after the repository prefix (e.g. \"ref:refs/heads/main\"), which this module builds from github_repo, github_owner_id and github_repo_id."
   }
 }
 
@@ -84,6 +129,10 @@ variable "permissions_boundary_arn" {
 
     This module consumes the boundary; it does not create it. That policy is
     account-scoped and belongs in the account bootstrap config.
+
+    Worth knowing what a boundary does not do: it bounds what this principal
+    may do, and says nothing about who the principal is. That half is the
+    trust policy, which is why subject_suffixes is anchored by construction.
   EOT
   type        = string
 

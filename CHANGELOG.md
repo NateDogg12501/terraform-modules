@@ -9,6 +9,81 @@ the note under that version).
 Versions follow semver *from the consumer's point of view*: MAJOR means an
 existing deployment cannot move onto this version by bumping the tag alone.
 
+## v3.0.0 — 2026-08-10
+
+**`github-oidc-deploy-role` only.** Every other module is untouched, but the tag
+moves for the whole repo and a consumer pins one tag across its config, so
+bumping to v3.0.0 means re-pinning every `?ref=` and editing any
+`github-oidc-deploy-role` block.
+
+**Why this is not optional.** Every role built by v2.x is unassumable. GitHub's
+OIDC subject claim embeds numeric owner and repository IDs:
+
+```
+repo:NateDogg12501@28988424/aws-account@1329306836:ref:refs/heads/main
+```
+
+not the `repo:<owner>/<name>:...` form v2.x built its trust policies against and
+that most documentation still shows. Nothing matches, and the only symptom is
+`Not authorized to perform sts:AssumeRoleWithWebIdentity`, which says nothing
+about the subject. This was found the first time a real workflow tried to
+assume a role — v2.2.0 shipped having never been exercised end to end.
+
+Note the API will not tell you: `GET
+/repos/{owner}/{repo}/actions/oidc/customization/sub` reports
+`use_immutable_subject: false` while the tokens it mints carry the IDs anyway.
+Only a real token is authoritative.
+
+### Changed (breaking)
+
+- **`subject_claims` is replaced by `subject_suffixes`.** The caller now
+  supplies only the part *after* the repository prefix — `"ref:refs/heads/main"`
+  rather than `"repo:owner/name:ref:refs/heads/main"` — and the module builds
+  the anchored prefix from `github_repo` and the two new ID variables.
+
+  This is the same guard by a better mechanism. v2.x accepted whole `sub`
+  patterns and *validated* that each was anchored to `github_repo`; v3.0.0
+  *constructs* the anchor, so there is no value of `subject_suffixes` that
+  escapes it. The distinction is the whole lesson of this release: a validation
+  is only as correct as the format it was written against, and it stopped being
+  correct silently. A construction fails loudly and completely instead.
+
+- **`github_owner_id` and `github_repo_id` are new and required.** Both are
+  numbers; get them with
+  `gh api repos/<owner>/<name> --jq '{owner: .owner.id, repo: .id}'`.
+
+- **`required_version` relaxed from `>= 1.9` to `>= 1.5`**, matching the rest of
+  the repo. The 1.9 floor existed for a cross-variable `validation`, which no
+  longer exists.
+
+### Added
+
+- **`subject_claims` output** — the fully-qualified patterns the trust policy
+  actually accepts. When an assumption is refused, comparing this against a real
+  token's `sub` is the fastest way to find out why.
+
+### Migration
+
+For each `github-oidc-deploy-role` block: add `github_owner_id` and
+`github_repo_id`, then replace
+
+```hcl
+subject_claims = ["repo:NateDogg12501/kids-ledger:ref:refs/heads/main"]
+```
+
+with
+
+```hcl
+subject_suffixes = ["ref:refs/heads/main"]
+```
+
+Dropping the prefix is the whole edit; `["repo:owner/name:*"]` becomes
+`["*"]`. Passing a full claim is rejected at plan time rather than silently
+double-prefixed.
+
+Applying produces an in-place `assume_role_policy` update on each role. No role
+is replaced, and no role that worked before stops working — none of them worked.
+
 ## v2.2.0 — 2026-08-09
 
 Nothing here changes an existing module, so a consumer on v2.1.0 can bump

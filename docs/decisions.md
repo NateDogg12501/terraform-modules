@@ -113,3 +113,66 @@ variable validations, so a consuming project's `validate` job stays green on a
 config this rejects. The check fires at plan, which always precedes apply, so
 nothing unsafe can be applied — but a green `validate` is not evidence the
 claims were checked. Documented in the module's README.
+
+**Superseded 2026-08-10 by the entry below.** The anchoring rule survives; the
+mechanism and the version constraint do not.
+
+## 2026-08-10 — the subject prefix is constructed, not validated (v3.0.0)
+
+**Decision.** `subject_claims` is replaced by `subject_suffixes`.
+`github_owner_id` and `github_repo_id` become required. The module builds
+`repo:<owner>@<owner_id>/<name>@<repo_id>:` and prepends it to each suffix.
+`required_version` drops back to `>= 1.5`.
+
+**What forced it.** GitHub's OIDC `sub` claim embeds numeric owner and
+repository IDs. Every trust policy built by v2.x targets
+`repo:<owner>/<name>:...`, matches no token GitHub will mint, and fails with
+`Not authorized to perform sts:AssumeRoleWithWebIdentity` — an error that names
+neither the subject nor the claim. Every role v2.x ever created is unassumable.
+
+**How it was found, which is the uncomfortable part.** v2.2.0 was released,
+reviewed, and consumed by `aws-account` before anything ever exercised it. The
+module's tests, its validations and two rounds of review all passed on a design
+that could not work, because every one of them checked the config against the
+*documented* claim format rather than against a real token. It surfaced on the
+first real workflow run, in the phase after the one that shipped it.
+
+**Do not trust the API for this.** `GET
+/repos/{owner}/{repo}/actions/oidc/customization/sub` returns
+`use_immutable_subject: false` while the tokens it mints carry the IDs anyway.
+The only authoritative source is a decoded token, which is why the module's
+README now carries the two-line recipe for reading one.
+
+**Why the mechanism changed and not just the string.** The old guard was a
+validation: accept whole `sub` patterns, reject any not starting with
+`repo:<github_repo>:`. That is only as correct as the format it encodes, and
+when the format changed it did not fail — it went on passing while guarding
+nothing, and would have kept accepting a now-meaningless pattern indefinitely.
+Building the prefix instead means the anchor is not an assertion about the
+input but a property of the output: there is no `subject_suffixes` value that
+escapes it. A construction that is wrong breaks everything immediately and
+visibly; a validation that is wrong breaks nothing and protects nothing.
+
+That is the transferable rule, and it is worth more than this fix: **prefer
+making the unsafe state unrepresentable over checking that it did not
+occur** — especially for a rule expressed against an external format you do
+not control.
+
+**Consequence for the version constraint.** `>= 1.9` existed solely so the
+cross-variable validation could be written. With no cross-variable reference
+left, the constraint no longer describes anything, so it returns to the repo's
+`>= 1.5`. Recorded here rather than in the README, which describes only what is
+currently true.
+
+**Rejected: keep `subject_claims` as a deprecated second input.** It would have
+been additive — a MINOR bump, no consumer edits forced. But every value it can
+accept is now a value that produces an unassumable role, so keeping it means
+keeping a path that provably cannot work, for compatibility with zero working
+deployments. A MAJOR bump costs one re-pin today and nothing later; the tag was
+one day old and `aws-account` its only consumer.
+
+**Rejected: an `owner/repo`-shaped `github_repo` carrying the IDs inline**
+(e.g. `"NateDogg12501@28988424/aws-account@1329306836"`). One variable instead
+of three, but it makes the human-readable repository name unparseable for the
+role description, and it invites a caller to paste a prefix they built by hand —
+the exact error the construction exists to remove.

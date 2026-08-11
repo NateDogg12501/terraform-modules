@@ -1,14 +1,12 @@
 terraform {
-  # >= 1.9 rather than this repo's usual >= 1.5, and the reason is
-  # load-bearing: Terraform 1.9 is the first version whose variable
-  # `validation` blocks may reference *other* variables. The check that every
-  # entry in subject_claims is scoped to github_repo — the one thing standing
-  # between this module and a role assumable by any repository on GitHub — is
-  # exactly such a cross-variable check. On 1.8 or older it would silently be
-  # unwriteable, so the constraint is here to make that a version error rather
-  # than a missing guard. Generated projects already require >= 1.10 for the
-  # S3 backend's native locking, so this costs nothing in practice.
-  required_version = ">= 1.9"
+  # >= 1.5, matching the rest of this repo. Through v2.x this module asked for
+  # >= 1.9, because the guard that kept the role from being assumable by an
+  # unrelated repository was a variable `validation` referencing *another*
+  # variable, which 1.9 was the first release to allow. v3.0.0 replaced that
+  # check with a construction — the subject prefix is built from github_repo
+  # and the owner/repo IDs, so a caller cannot express an unanchored claim —
+  # and the constraint went with the reason for it. See docs/decisions.md.
+  required_version = ">= 1.5"
   required_providers {
     aws = {
       source  = "hashicorp/aws"

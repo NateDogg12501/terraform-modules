@@ -9,6 +9,27 @@ the note under that version).
 Versions follow semver *from the consumer's point of view*: MAJOR means an
 existing deployment cannot move onto this version by bumping the tag alone.
 
+## Unreleased
+
+### Documentation
+
+- **`lambda-web-app`: `ssm_secret_env_vars` is resolved at apply time, and now
+  says so.** No behaviour change — the module always worked this way. What
+  changed is that the README, the variable description and the `data` block
+  itself now state the consequence: rotating an SSM parameter changes nothing
+  that is already deployed, with no error and no warning, until every consuming
+  environment is applied again.
+
+  This cost P12 a debugging cycle. The password hash was corrected in SSM,
+  staging kept refusing the correct password, and only a redeploy resolved it.
+  Nothing was broken; nothing said what the mechanism was either. The README
+  now also carries the two-step rotation procedure and a way to tell which
+  deployments are behind.
+
+  Rationale for keeping apply-time resolution rather than switching to a
+  runtime lookup — including what the alternative would have cost — is in
+  `aws-account/docs/decisions.md` #19.
+
 ## v3.0.0 — 2026-08-10
 
 **`github-oidc-deploy-role` only.** Every other module is untouched, but the tag

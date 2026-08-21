@@ -101,3 +101,41 @@ output "url" {
    ```bash
    aws ssm put-parameter --name "/my-app/app_password" --type SecureString --value "..."
    ```
+
+## `ssm_secret_env_vars` is resolved at apply time, not at runtime
+
+This module reads each parameter with a `data` source and writes the decrypted
+value into the function's `environment`. **There is no runtime lookup.** The
+consequence is worth stating before it costs you an afternoon:
+
+> Changing an SSM parameter changes nothing that is already deployed. The
+> function keeps serving the value it was applied with until the next
+> `terraform apply`.
+
+So rotating a secret is two steps — set it, then redeploy every environment
+that consumes it — and nothing fails or warns in between. The symptom of
+forgetting the second step is the confusing one: a credential that is correct
+in SSM and rejected by the running app, or correct in one environment and
+rejected in another.
+
+**How to tell whether a deployed function is current.** Compare the function's
+environment against SSM without printing either:
+
+```bash
+aws lambda get-function-configuration --function-name my-app --query 'Environment.Variables.APP_PASSWORD' --output text > /tmp/a
+aws ssm get-parameter --name /my-app/app_password --with-decryption --query 'Parameter.Value' --output text > /tmp/b
+cmp -s /tmp/a /tmp/b && echo current || echo STALE; rm -f /tmp/a /tmp/b
+```
+
+If you run more than a couple of projects, do this properly instead — a version
+comparison across the whole account, with no values on disk at all:
+[`aws-account/scripts/credential-doctor.js`](https://github.com/NateDogg12501/aws-account/blob/main/scripts/credential-doctor.js).
+
+**Why it works this way, and why that is not obviously wrong.** Reading SSM at
+runtime instead would make rotation take effect without a redeploy, at the cost
+of an SSM call on the cold path, an `ssm:GetParameter` grant on the execution
+role (this module attaches `AWSLambdaBasicExecutionRole` and nothing else), and
+a startup failure mode when SSM is unreachable that currently cannot happen.
+Apply-time resolution is the deliberate trade: a deployed function has no
+runtime dependency on SSM at all. Rotation is the price, and it is a documented
+price rather than a hidden one.

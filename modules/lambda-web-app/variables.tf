@@ -100,6 +100,12 @@ variable "ssm_secret_env_vars" {
     reads these — it never creates or owns their value. Create each one
     yourself first:
       aws ssm put-parameter --name "<path>" --type SecureString --value "..."
+
+    Resolved at APPLY time and baked into the function's environment — there is
+    no runtime lookup. Changing a parameter afterwards changes nothing that is
+    already deployed, silently, until the next apply. Rotating a secret is
+    therefore two steps: set it, then redeploy every environment that consumes
+    it. See this module's README.
   EOT
   type        = map(string)
   default     = {}

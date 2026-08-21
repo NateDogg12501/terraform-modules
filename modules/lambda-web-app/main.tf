@@ -68,6 +68,14 @@ resource "terraform_data" "lambda_zip" {
 # deliberately does not manage or write their value — only reading it here
 # means the secret's only durable home is SSM, never a local tfvars file or
 # Terraform state as the source of truth.
+#
+# This resolves at APPLY time and the value is baked into the function's
+# environment below. There is no runtime lookup, which is the deliberate trade
+# — a deployed function has no runtime dependency on SSM — and it is also the
+# thing that surprises people. Rotating one of these parameters changes nothing
+# that is already running, with no error and no warning, until every consuming
+# environment is applied again. README.md has the rotation procedure and a way
+# to tell which deployments are behind.
 data "aws_ssm_parameter" "secrets" {
   for_each        = var.ssm_secret_env_vars
   name            = each.value
